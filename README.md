@@ -36,15 +36,23 @@ Para logs de conexões de rede (onde não há assinaturas estáticas conhecidas)
 
 ---
 
-## 🔒 Práticas de Segurança e Hardening (Pronto para Produção)
+## 🔒 Práticas de Segurança e Hardening (OWASP Top 10 & Produção)
 
-Para preparar o projeto para publicação em nuvem (ex: Vercel ou VPS) de forma segura, implementamos os seguintes controles:
-* **Gerenciamento de Segredos**: Toda configuração confidencial é isolada do código e lida da memória usando `python-dotenv`. Nenhuma chave possui o prefixo de exposição pública (ex: `NEXT_PUBLIC_`), garantindo que segredos permaneçam no servidor.
-* **Ocultação de Stack Traces**: O Streamlit está configurado via `.streamlit/config.toml` com `showErrorDetails = false`. Detalhes de exceções internas e caminhos de pastas locais não vazam para o navegador do cliente.
-* **Política CORS & CSP**: Proteções nativas ativadas contra conexões de origens não autorizadas (CORS) e políticas restritas de Content Security Policy (CSP) contra injeção de scripts maliciosos (XSS).
-* **Cookies e Sanitização de Storages**:
-  - Funções prontas para emissão de cookies de sessão com as flags `HttpOnly` (indisponível para scripts JS), `Secure` (apenas tráfego HTTPS criptografado) e `SameSite=Strict` (imunidade a CSRF).
-  - Limpeza automática de `localStorage` e `sessionStorage` disparada no navegador do usuário no momento em que ele fecha a aba.
+Para blindar a aplicação contra vulnerabilidades críticas e prepará-la para um cenário de produção em nuvem (ex: Vercel ou VPS), o projeto incorpora controles inspirados no OWASP Top 10:
+
+* **Higienização e Validação de Entradas (A03:2021-Injection)**:
+  - **Filtro de Lista Branca (Allowlist)**: A classe `modules/validation.py` define formatos rígidos de dados esperados (ex: Regex restrita para IPs e caracteres permitidos para login).
+  - **Proteção contra XSS**: Escapes automáticos com tratamento HTML de caracteres perigosos (`<`, `>`, `&`, `"`, `'`) antes do processamento ou da renderização.
+* **Criptografia e Controle de Acesso (A01:2021-Broken Access Control & A02:2021-Cryptographic Failures)**:
+  - **Bcrypt Hashing**: As senhas são cifradas usando `bcrypt` com salt gerado dinamicamente e fator de custo adaptável (rounds=12), evitando algoritmos obsoletos como MD5 ou SHA1.
+  - **Princípio do Privilégio Mínimo (RBAC)**: Regras com política padrão de negação (Default Deny), verificando níveis de acesso estruturados dos usuários.
+* **Monitoramento e Logs Seguros (A09:2021-Security Logging and Monitoring Failures)**:
+  - **Auditoria Centralizada**: Geração de um histórico seguro de ações no servidor (`server_audit.log`).
+  - **Mascaramento de Dados (Data Masking)**: Um filtro dinâmico intercepta logs e substitui automaticamente segredos, senhas e tokens por `***MASCARADO***` via Expressões Regulares antes de persistir no arquivo de auditoria.
+* **Hardening de Infraestrutura & Front-End**:
+  - **Segredos Isolados**: Variáveis confidenciais carregadas de `.env` (em memória) sem prefixos que expõem chaves ao cliente (ex: `NEXT_PUBLIC_`).
+  - **Ocultação de Stack Traces**: Streamlit configurado via `.streamlit/config.toml` com `showErrorDetails = false` para prevenir vazamento de dados internos.
+  - **Headers de Segurança e Cookies**: Mecanismo de CSP (Content Security Policy) e CORS robusto, além de tratamento de cookies com flags `HttpOnly`, `Secure` e `SameSite=Strict` e rotina de auto-limpeza do `sessionStorage` ao fechar abas do navegador.
 
 ---
 
@@ -103,8 +111,11 @@ Para preparar o projeto para publicação em nuvem (ex: Vercel ou VPS) de forma 
 
 * `generate_data.py`: Script para simular logs realistas, injetando ataques de força bruta, conexões C2 e exfiltração.
 * `analyzer.py`: A inteligência do SIEM (processamento pandas, regras estatísticas de login e algoritmo K-Means).
-* `app.py`: O frontend do dashboard interativo que exibe os alertas e gráficos de dispersão.
+* `app.py`: O frontend do dashboard interativo que exibe os alertas, gráficos de dispersão e o painel de demonstração de segurança.
 * `requirements.txt`: Dependências do projeto.
 * `.env.example`: Modelo de variáveis de ambiente.
 * `.streamlit/config.toml`: Parâmetros de hardening do Streamlit.
-* `modules/security_helper.py`: Implementação das melhores práticas de CSP, CORS, Cookies e limpeza de localStorage.
+* `modules/security_helper.py`: Implementação das melhores práticas de CSP, CORS, Cookies e limpeza de storage.
+* `modules/validation.py`: Validador de dados de entrada por Allowlist e prevenção contra ataques XSS.
+* `modules/auth.py`: Hashing criptográfico seguro com Bcrypt e controle de acesso RBAC.
+* `modules/secure_logger.py`: Auditoria de logs do servidor com filtro ativo de mascaramento de dados confidenciais.
