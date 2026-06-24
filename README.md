@@ -8,7 +8,7 @@ Sistemas de cibersegurança geram gigabytes de logs por dia (arquivos syslog do 
 
 ## 🚀 Como a Aplicação Funciona
 
-O projeto é dividido em três etapas principais: **Simulação (Geração de Dados)**, **Análise e Detecção** e **Visualização Interativa**.
+O projeto é dividido em três etapas principais: **Simulação (Geração de Dados)**, **Análise e Detecção** e **Visualização Interativa / Hardening**.
 
 ```mermaid
 graph TD
@@ -17,6 +17,7 @@ graph TD
     C -->|Detecção Estatística| D[Alertas de Login]
     C -->|K-Means Clustering| E[Outliers de Rede]
     D & E --> F[app.py Streamlit Dashboard]
+    G[modules/security_helper.py] -->|Proteções CSP, CORS e Cookies| F
 ```
 
 ### 1. Detecção Estatística (Logs de Autenticação)
@@ -35,6 +36,18 @@ Para logs de conexões de rede (onde não há assinaturas estáticas conhecidas)
 
 ---
 
+## 🔒 Práticas de Segurança e Hardening (Pronto para Produção)
+
+Para preparar o projeto para publicação em nuvem (ex: Vercel ou VPS) de forma segura, implementamos os seguintes controles:
+* **Gerenciamento de Segredos**: Toda configuração confidencial é isolada do código e lida da memória usando `python-dotenv`. Nenhuma chave possui o prefixo de exposição pública (ex: `NEXT_PUBLIC_`), garantindo que segredos permaneçam no servidor.
+* **Ocultação de Stack Traces**: O Streamlit está configurado via `.streamlit/config.toml` com `showErrorDetails = false`. Detalhes de exceções internas e caminhos de pastas locais não vazam para o navegador do cliente.
+* **Política CORS & CSP**: Proteções nativas ativadas contra conexões de origens não autorizadas (CORS) e políticas restritas de Content Security Policy (CSP) contra injeção de scripts maliciosos (XSS).
+* **Cookies e Sanitização de Storages**:
+  - Funções prontas para emissão de cookies de sessão com as flags `HttpOnly` (indisponível para scripts JS), `Secure` (apenas tráfego HTTPS criptografado) e `SameSite=Strict` (imunidade a CSRF).
+  - Limpeza automática de `localStorage` e `sessionStorage` disparada no navegador do usuário no momento em que ele fecha a aba.
+
+---
+
 ## 🛠️ Tecnologias Utilizadas
 
 * **Python 3.8+**
@@ -42,6 +55,7 @@ Para logs de conexões de rede (onde não há assinaturas estáticas conhecidas)
 * **Scikit-Learn:** Pré-processamento com `StandardScaler` e algoritmo `KMeans` para clusterização e detecção de outliers.
 * **Streamlit:** Construção rápida de uma interface web dinâmica e moderna.
 * **Plotly:** Gráficos de dispersão (scatter plots) totalmente interativos e interligados com zoom e tooltips.
+* **Python-Dotenv:** Carregamento seguro de segredos de ambiente.
 
 ---
 
@@ -62,17 +76,23 @@ Para logs de conexões de rede (onde não há assinaturas estáticas conhecidas)
    source venv/bin/activate
    ```
 
-3. **Instale as dependências:**
+3. **Configure as variáveis de ambiente:**
+   ```bash
+   cp .env.example .env
+   ```
+   *(Ajuste os valores dentro de `.env` se necessário)*
+
+4. **Instale as dependências:**
    ```bash
    pip install -r requirements.txt
    ```
 
-4. **Gere os dados de teste (opcional, o app faz isso se não existirem):**
+5. **Gere os dados de teste (opcional, o app faz isso se não existirem):**
    ```bash
    python generate_data.py
    ```
 
-5. **Inicie o Painel Interativo:**
+6. **Inicie o Painel Interativo:**
    ```bash
    streamlit run app.py
    ```
@@ -85,3 +105,6 @@ Para logs de conexões de rede (onde não há assinaturas estáticas conhecidas)
 * `analyzer.py`: A inteligência do SIEM (processamento pandas, regras estatísticas de login e algoritmo K-Means).
 * `app.py`: O frontend do dashboard interativo que exibe os alertas e gráficos de dispersão.
 * `requirements.txt`: Dependências do projeto.
+* `.env.example`: Modelo de variáveis de ambiente.
+* `.streamlit/config.toml`: Parâmetros de hardening do Streamlit.
+* `modules/security_helper.py`: Implementação das melhores práticas de CSP, CORS, Cookies e limpeza de localStorage.
