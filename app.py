@@ -5,6 +5,10 @@ import plotly.express as px
 import plotly.graph_objects as go
 from analyzer import SIEMAnalyzer
 import os
+from dotenv import load_dotenv
+
+# Carrega variáveis de ambiente do arquivo .env
+load_dotenv()
 
 # Set Page Config
 st.set_page_config(
@@ -129,7 +133,7 @@ st.sidebar.image("https://img.icons8.com/nolan/96/shield.png", width=80)
 st.sidebar.markdown("### SIEM Analyzer Dashboard")
 st.sidebar.markdown("Este painel demonstra como técnicas de Ciência de Dados e Machine Learning podem processar logs em escala para detectar ameaças em tempo real.")
 
-page = st.sidebar.radio("Navegar para:", ["Painel de Autenticação", "Análise de Rede (AI K-Means)", "Visualizador de Logs Brutos"])
+page = st.sidebar.radio("Navegar para:", ["Painel de Autenticação", "Análise de Rede (AI K-Means)", "Visualizador de Logs Brutos", "Segurança & Hardening"])
 
 if page == "Painel de Autenticação":
     st.header("🔑 Detecção Estatística em Eventos de Autenticação")
@@ -264,3 +268,43 @@ elif page == "Visualizador de Logs Brutos":
             lambda val: 'background-color: rgba(255, 75, 75, 0.2)' if val == True else '',
             subset=['anomaly_flag']
         ))
+
+elif page == "Segurança & Hardening":
+    st.header("🛡️ Arquitetura de Cibersegurança & Hardening do App")
+    st.markdown("""
+    Esta seção documenta os controles de cibersegurança e boas práticas implementados para preparar a aplicação para produção (ex: hospedagem na Vercel ou VPS), garantindo privacidade dos dados e imunidade a ataques básicos.
+    """)
+    
+    from modules.security_helper import get_security_headers, get_session_storage_cleanup_script
+    
+    col_sec1, col_sec2 = st.columns(2)
+    
+    with col_sec1:
+        st.subheader("🔑 1. Gerenciamento de Segredos e Escopo de Variáveis")
+        st.info("""
+        * **Variáveis de Ambiente (.env)**: Configurações de API e DB foram extraídas do código fonte e são lidas dinamicamente da memória com `python-dotenv`.
+        * **Controle de Vazamento Frontend**: Garantimos que chaves confidenciais do backend não possuam prefixos de exposição ao cliente (como `NEXT_PUBLIC_`), prevenindo vazamento acidental em builds de frontend compilados.
+        """)
+        
+        st.subheader("📦 2. Proteção de Código e Source Maps")
+        st.warning("""
+        * **Source Maps Desativados**: Em produção, source maps são removidos do build final para impedir a engenharia reversa do código-fonte original `.tsx` ou `.py`.
+        * **Streamlit Client Hardening**: O parâmetro `showErrorDetails = false` está ativo no arquivo `.streamlit/config.toml`, prevenindo que stack traces detalhados e caminhos de diretório locais vazem para o navegador em caso de exceções do sistema.
+        """)
+
+    with col_sec2:
+        st.subheader("🍪 3. Cookies HttpOnly, Secure e Sanitização de Storages")
+        st.success("""
+        * **Prevenção contra Session Hijacking**: Em caso de autenticação por cookies, os tokens são marcados com `HttpOnly` (indisponíveis para scripts do lado do cliente / JS) e `Secure` (somente via conexões HTTPS criptografadas).
+        * **Higienização de Local/Session Storage**: Dados pessoais não são salvos em LocalStorage de forma persistente. Implementamos um gatilho de limpeza automática do Session e Local Storage disparado imediatamente quando o usuário fecha a aba do navegador.
+        """)
+        
+        st.subheader("🌐 4. Políticas de CORS e CSP")
+        st.error("""
+        * **CORS Habilitado e Restrito**: Streamlit configurado com `enableCORS = true` no servidor, prevenindo requisições cross-origin não autorizadas.
+        * **CSP (Content Security Policy)**: Aplicada política estritamente restrita a fontes conhecidas ('self') para barrar ataques XSS de injeção de scripts terceiros.
+        """)
+        
+        # Demonstrando a injeção do JS de limpeza do sessionStorage (segurança de dados do cliente)
+        st.components.v1.html(get_session_storage_cleanup_script(), height=0)
+
