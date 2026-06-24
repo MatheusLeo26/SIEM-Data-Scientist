@@ -6,9 +6,15 @@ import plotly.graph_objects as go
 from analyzer import SIEMAnalyzer
 import os
 from dotenv import load_dotenv
+from modules.secure_logger import secure_log
+from modules.validation import sanitize_username, validate_ip, escape_html
 
 # Carrega variáveis de ambiente do arquivo .env
 load_dotenv()
+
+# Log do início da aplicação
+secure_log.info("Aplicação SIEM Data Scientist iniciada com sucesso.")
+
 
 # Set Page Config
 st.set_page_config(
@@ -99,6 +105,7 @@ def run_siem_analysis():
         import generate_data
         generate_data.generate_auth_logs()
         generate_data.generate_network_logs()
+        secure_log.info("CSVs sintéticos de log gerados e salvos localmente.")
         
     analyzer = SIEMAnalyzer()
     analyzer.load_data()
@@ -106,7 +113,13 @@ def run_siem_analysis():
     net_anom = analyzer.detect_network_anomalies()
     return auth_anom, net_anom
 
-auth_df, net_df = run_siem_analysis()
+try:
+    auth_df, net_df = run_siem_analysis()
+except Exception as e:
+    secure_log.error(f"Erro crítico ao carregar análises: {str(e)}", exc_info=True)
+    st.error("Ocorreu um erro interno de processamento. Nossa equipe foi notificada.")
+    st.stop()
+
 
 # Calculate Metrics
 total_auth = len(auth_df)
@@ -249,8 +262,17 @@ elif page == "Visualizador de Logs Brutos":
         st.subheader("Pesquisar nos Logs de Autenticação")
         search_user = st.text_input("Filtrar por Usuário (ex: joao):", "")
         df_filtered = auth_df.copy()
+        
         if search_user:
-            df_filtered = df_filtered[df_filtered['user'].str.contains(search_user, case=False)]
+            # SANITIZAÇÃO DE INPUT
+            safe_user = sanitize_username(search_user)
+            if safe_user:
+                secure_log.info(f"Busca de autenticação realizada pelo termo: {safe_user}")
+                df_filtered = df_filtered[df_filtered['user'].str.contains(safe_user, case=False)]
+            else:
+                secure_log.warning(f"Tentativa de busca com input malicioso/inválido de usuário detectada e bloqueada.")
+                st.warning("Formato de usuário inválido. Use apenas letras e números.")
+                df_filtered = pd.DataFrame(columns=auth_df.columns) # Retorna vazio
         
         st.dataframe(df_filtered.style.map(
             lambda val: 'background-color: rgba(255, 75, 75, 0.2)' if val == True else '',
@@ -261,8 +283,17 @@ elif page == "Visualizador de Logs Brutos":
         st.subheader("Pesquisar nos Logs de Rede")
         search_ip = st.text_input("Filtrar por IP de Destino:", "")
         df_filtered_net = net_df.copy()
+        
         if search_ip:
-            df_filtered_net = df_filtered_net[df_filtered_net['destination_ip'].str.contains(search_ip, case=False)]
+            # VALIDAÇÃO DE INPUT
+            safe_ip = validate_ip(search_ip)
+            if safe_ip:
+                secure_log.info(f"Busca de rede realizada pelo IP: {safe_ip}")
+                df_filtered_net = df_filtered_net[df_filtered_net['destination_ip'].str.contains(safe_ip, case=False)]
+            else:
+                secure_log.warning(f"Tentativa de busca com IP malformado detectada e bloqueada.")
+                st.warning("Formato de IP inválido. Utilize um endereço IPv4 válido.")
+                df_filtered_net = pd.DataFrame(columns=net_df.columns) # Retorna vazio
             
         st.dataframe(df_filtered_net.style.map(
             lambda val: 'background-color: rgba(255, 75, 75, 0.2)' if val == True else '',
@@ -280,29 +311,30 @@ elif page == "Segurança & Hardening":
     col_sec1, col_sec2 = st.columns(2)
     
     with col_sec1:
-        st.subheader("🔑 1. Gerenciamento de Segredos e Escopo de Variáveis")
+        st.subheader("🔑 1. Validação de Entradas & Access Control")
         st.info("""
-        * **Variáveis de Ambiente (.env)**: Configurações de API e DB foram extraídas do código fonte e são lidas dinamicamente da memória com `python-dotenv`.
-        * **Controle de Vazamento Frontend**: Garantimos que chaves confidenciais do backend não possuam prefixos de exposição ao cliente (como `NEXT_PUBLIC_`), prevenindo vazamento acidental em builds de frontend compilados.
+        * **Allowlist de Inputs (Sanitization)**: Campos de busca (IPs e Usuários) passam por validações Regex rígidas no `validation.py`. Tentativas de XSS ou inputs malformados são bloqueados.
+        * **Controle de Acesso e Hash Seguro**: O módulo `auth.py` demonstra as defesas usando **Bcrypt** para hashing de senhas com *salt* dinâmico, e funções decoradoras para RBAC (Controle de Acesso Baseado em Perfis), mitigando *Broken Access Control*.
+        * **Isolamento de Variáveis (.env)**: Chaves lidas em runtime. Nenhuma exposta ao frontend (ex: via `NEXT_PUBLIC_`).
         """)
         
         st.subheader("📦 2. Proteção de Código e Source Maps")
         st.warning("""
-        * **Source Maps Desativados**: Em produção, source maps são removidos do build final para impedir a engenharia reversa do código-fonte original `.tsx` ou `.py`.
-        * **Streamlit Client Hardening**: O parâmetro `showErrorDetails = false` está ativo no arquivo `.streamlit/config.toml`, prevenindo que stack traces detalhados e caminhos de diretório locais vazem para o navegador em caso de exceções do sistema.
+        * **Source Maps Desativados**: Em produção, removemos debuggers e map files para evitar engenharia reversa.
+        * **Streamlit Client Hardening**: Exceções são encapsuladas em blocos `try-except` com logs, impedindo o vazamento de stack traces e caminhos. O arquivo `.streamlit/config.toml` reforça `showErrorDetails = false`.
         """)
 
     with col_sec2:
-        st.subheader("🍪 3. Cookies HttpOnly, Secure e Sanitização de Storages")
+        st.subheader("🍪 3. Cookies HttpOnly, Local Storage & CSP/CORS")
         st.success("""
-        * **Prevenção contra Session Hijacking**: Em caso de autenticação por cookies, os tokens são marcados com `HttpOnly` (indisponíveis para scripts do lado do cliente / JS) e `Secure` (somente via conexões HTTPS criptografadas).
-        * **Higienização de Local/Session Storage**: Dados pessoais não são salvos em LocalStorage de forma persistente. Implementamos um gatilho de limpeza automática do Session e Local Storage disparado imediatamente quando o usuário fecha a aba do navegador.
+        * **CORS Habilitado e CSP**: Streamlit configurado com `enableCORS = true`. O `security_helper.py` traz as defesas avançadas contra *Clickjacking*, CSRF e XSS via CSP rigoroso.
+        * **Segurança de Cookies e Storage**: Todos os tokens/cookies via `HttpOnly`, `Secure` e `SameSite`. Dados não persistem localmente: incluímos script JS que invoca `sessionStorage.clear()` imediatamente ao fechar a aba.
         """)
         
-        st.subheader("🌐 4. Políticas de CORS e CSP")
+        st.subheader("🌐 4. Logs Seguros (Secure Logging & Monitoring)")
         st.error("""
-        * **CORS Habilitado e Restrito**: Streamlit configurado com `enableCORS = true` no servidor, prevenindo requisições cross-origin não autorizadas.
-        * **CSP (Content Security Policy)**: Aplicada política estritamente restrita a fontes conhecidas ('self') para barrar ataques XSS de injeção de scripts terceiros.
+        * **Erros Genéricos ao Usuário**: Em caso de falha sistêmica, o painel exibe uma mensagem inofensiva ("Erro interno. Tente novamente").
+        * **Data Masking (Ocultação de Dados em Logs)**: O backend grava um log de auditoria detalhado (`server_audit.log`). O `secure_logger.py` atua como um filtro que substitui dados confidenciais (Senhas, Tokens de API, Cartões de Crédito) por `***MASCARADO***` antes de salvar.
         """)
         
         # Demonstrando a injeção do JS de limpeza do sessionStorage (segurança de dados do cliente)
